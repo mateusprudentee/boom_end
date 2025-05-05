@@ -6,7 +6,7 @@
     "serve": "vue-cli-service serve",
     "build": "vue-cli-service build",
     "lint": "vue-cli-service lint",
-    "postinstall": "npm rebuild sqlite3 --build-from-source=no"
+    "postinstall": "npm rebuild sqlite3 --build-from-source=no && npm install -g @vue/cli-service"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^6.7.2",
@@ -21,7 +21,6 @@
     "cookie-parser": "^1.4.7",
     "core-js": "^3.36.1",
     "cors": "^2.8.5",
-    "crm": "file:",
     "crypto-js": "^4.2.0",
     "docxtemplater": "^3.55.9",
     "echarts": "^5.6.0",
@@ -62,9 +61,10 @@
     "@babel/eslint-parser": "^7.24.5",
     "@babel/plugin-transform-private-methods": "^7.24.5",
     "@vitejs/plugin-vue": "^5.2.1",
-    "@vue/cli-plugin-babel": "~5.0.8",
-    "@vue/cli-plugin-eslint": "~5.0.8",
-    "@vue/cli-service": "~5.0.8",
+    "@vue/cli": "^5.0.8",
+    "@vue/cli-plugin-babel": "^5.0.8",
+    "@vue/cli-plugin-eslint": "^5.0.8",
+    "@vue/cli-service": "^5.0.8",
     "autoprefixer": "^10.4.21",
     "eslint": "^8.56.0",
     "eslint-plugin-vue": "^9.23.0",
@@ -77,7 +77,8 @@
     "vite": "^6.3.4"
   },
   "engines": {
-    "node": "18.x"
+    "node": "18.x",
+    "npm": "9.x"
   },
   "eslintConfig": {
     "root": true,
