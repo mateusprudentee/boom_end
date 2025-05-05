@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "serve": "vue-cli-service serve",
+    "postinstall": "npm rebuild sqlite3 --build-from-source=no",
     "build": "vue-cli-service build",
     "lint": "vue-cli-service lint"
   },
@@ -81,7 +82,7 @@
     "vite": "^6.3.4"
   },
   "engines": {
-    "node": "20.x"
+    "node": "18.x"
   },
   "eslintConfig": {
     "root": true,
