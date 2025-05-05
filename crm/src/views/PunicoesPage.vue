@@ -21,7 +21,7 @@
           <!-- Conteúdo real para Punições -->
           <div class="forum" v-else>
             <div class="forum-card-post">
-              <p>Punições</p>
+              <p>Hoje</p>
               <p style="font-size: 16px; color: gray; margin-top: -20px;">{{ punicoes.length }} aplicadas.</p>
             </div>
             <div class="corpo-punicoes">

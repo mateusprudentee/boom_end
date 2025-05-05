@@ -11,6 +11,11 @@
           <q-icon name="home" size="1.5rem" />
           <span>Início</span>
         </a>
+
+        <a class="cabecalho-item" href="/reels">
+          <q-icon name="camera_alt" size="1.5rem" />
+          <span>Reels</span>
+        </a>
         
         <a class="cabecalho-item" href="/loja">
           <q-icon name="store" size="1.5rem" />

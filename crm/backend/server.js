@@ -4,20 +4,11 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 const app = express();
 const port = 3000;
-const { MercadoPagoConfig, Payment } = require('mercadopago');
 
 // Configurações básicas
 app.use(cors());
 app.use(bodyParser.json());
 app.use(express.json());
-
-// Configuração do Mercado Pago
-const client = new MercadoPagoConfig({
-  accessToken: 'APP_USR-1489103879124630-031514-31c4530b8a5b69378bd8cf576c962599-312041186',
-  options: { timeout: 5000 }
-});
-
-const paymentMP = new Payment(client);
 
 // Conexão com o banco de dados
 const db = new sqlite3.Database("./loja_vip.db", (err) => {
@@ -68,9 +59,63 @@ function initializeDatabase() {
         valor_total REAL NOT NULL,
         status TEXT DEFAULT 'pendente',
         metodo_pagamento TEXT,
-        pix_qr_code TEXT,
-        pix_ticket_url TEXT,
         data_pedido TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Tabela de categorias do fórum
+    db.run(`
+      CREATE TABLE IF NOT EXISTS forum_categorias (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT NOT NULL,
+        descricao TEXT,
+        url TEXT UNIQUE NOT NULL,
+        threads INTEGER DEFAULT 0,
+        posts INTEGER DEFAULT 0,
+        data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Tabela de tópicos do fórum
+    db.run(`
+      CREATE TABLE IF NOT EXISTS forum_topicos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        categoria_id INTEGER NOT NULL,
+        titulo TEXT NOT NULL,
+        conteudo TEXT NOT NULL,
+        autor_id INTEGER NOT NULL,
+        autor_nome TEXT NOT NULL,
+        respostas INTEGER DEFAULT 0,
+        visualizacoes INTEGER DEFAULT 0,
+        fixado BOOLEAN DEFAULT FALSE,
+        fechado BOOLEAN DEFAULT FALSE,
+        data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        ultima_resposta TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (categoria_id) REFERENCES forum_categorias(id)
+      )
+    `);
+
+    // Tabela de postagens/respostas
+    db.run(`
+      CREATE TABLE IF NOT EXISTS forum_postagens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        topico_id INTEGER NOT NULL,
+        autor_id INTEGER NOT NULL,
+        autor_nome TEXT NOT NULL,
+        conteudo TEXT NOT NULL,
+        data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (topico_id) REFERENCES forum_topicos(id)
+      )
+    `);
+
+    // Tabela de visualizações
+    db.run(`
+      CREATE TABLE IF NOT EXISTS forum_visualizacoes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        topico_id INTEGER NOT NULL,
+        usuario_id INTEGER,
+        data_visualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (topico_id) REFERENCES forum_topicos(id)
       )
     `);
 
@@ -144,6 +189,64 @@ function initializeDatabase() {
             console.error("Erro ao inserir produtos iniciais:", err.message);
           } else {
             console.log("Produtos iniciais inseridos com sucesso");
+          }
+        });
+      }
+    });
+
+    // Popular categorias iniciais do fórum
+    db.get("SELECT COUNT(*) as count FROM forum_categorias", (err, row) => {
+      if (err) {
+        console.error("Erro ao verificar categorias:", err.message);
+        return;
+      }
+
+      if (row.count === 0) {
+        const categoriasIniciais = [
+          {
+            nome: "Anúncios e Novidades",
+            descricao: "Notícias e atualizações do servidor",
+            url: "anuncios-e-novidades",
+            threads: 24,
+            posts: 156
+          },
+          {
+            nome: "Suporte",
+            descricao: "Problemas e dúvidas técnicas",
+            url: "suporte",
+            threads: 42,
+            posts: 287
+          },
+          {
+            nome: "Eventos",
+            descricao: "Eventos e competições",
+            url: "eventos",
+            threads: 15,
+            posts: 203
+          }
+        ];
+
+        const stmt = db.prepare(`
+          INSERT INTO forum_categorias (
+            nome, descricao, url, threads, posts
+          ) VALUES (?, ?, ?, ?, ?)
+        `);
+
+        categoriasIniciais.forEach(categoria => {
+          stmt.run(
+            categoria.nome,
+            categoria.descricao,
+            categoria.url,
+            categoria.threads,
+            categoria.posts
+          );
+        });
+
+        stmt.finalize(err => {
+          if (err) {
+            console.error("Erro ao inserir categorias iniciais:", err.message);
+          } else {
+            console.log("Categorias iniciais do fórum inseridas com sucesso");
           }
         });
       }
@@ -443,8 +546,6 @@ app.put("/carrinho/:id", (req, res) => {
   );
 });
 
-// PAGAMENTO PIX
-
 // Rota para calcular total do carrinho
 app.get("/carrinho/total", (req, res) => {
   db.all(`
@@ -469,97 +570,6 @@ app.get("/carrinho/total", (req, res) => {
   });
 });
 
-// Rota para pagamento PIX
-app.post("/api/payments/pix", async (req, res) => {
-  try {
-    const { email, amount, description } = req.body;
-
-    // Validação dos dados
-    if (!email || !amount || !description) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'Dados incompletos',
-        message: 'Email, amount e description são obrigatórios'
-      });
-    }
-
-    const paymentData = {
-      transaction_amount: parseFloat(amount),
-      description: description.substring(0, 100),
-      payment_method_id: 'pix',
-      payer: {
-        email: email,
-        first_name: 'Cliente',
-        last_name: 'Loja VIP'
-      }
-    };
-
-    // Configura timeout de 10 segundos
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => {
-        reject(new Error('Timeout na comunicação com o Mercado Pago'));
-      }, 10000);
-    });
-
-    // Processa o pagamento
-    const paymentPromise = paymentMP.create({ body: paymentData });
-    const response = await Promise.race([paymentPromise, timeoutPromise]);
-
-    if (!response?.point_of_interaction?.transaction_data) {
-      throw new Error('Resposta inválida do Mercado Pago');
-    }
-
-    // Formata a resposta de sucesso
-    const pixData = {
-      qr_code: response.point_of_interaction.transaction_data.qr_code,
-      qr_code_base64: response.point_of_interaction.transaction_data.qr_code_base64,
-      ticket_url: response.point_of_interaction.transaction_data.ticket_url
-    };
-
-    // Registrar o pedido no banco de dados
-    db.run(`
-      INSERT INTO pedidos (
-        valor_total,
-        status,
-        metodo_pagamento,
-        pix_qr_code,
-        pix_ticket_url
-      ) VALUES (?, ?, ?, ?, ?)
-    `, [
-      amount,
-      'pendente',
-      'pix',
-      pixData.qr_code_base64,
-      pixData.ticket_url
-    ], function(err) {
-      if (err) {
-        console.error("Erro ao registrar pedido:", err.message);
-      }
-    });
-
-    res.json({
-      success: true,
-      payment_id: response.id,
-      status: response.status,
-      ...pixData
-    });
-
-  } catch (error) {
-    console.error('Erro no processamento PIX:', {
-      error: error.message,
-      stack: error.stack,
-      request: req.body
-    });
-
-    res.status(500).json({
-      success: false,
-      error: 'Erro ao processar pagamento PIX',
-      message: error.message,
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
-});
-
 // Rota para finalizar compra (limpar carrinho após pagamento)
 app.post("/carrinho/finalizar", (req, res) => {
   db.run("DELETE FROM carrinho", function(err) {
@@ -568,6 +578,192 @@ app.post("/carrinho/finalizar", (req, res) => {
       return;
     }
     res.json({ message: "Carrinho limpo com sucesso" });
+  });
+});
+
+// FÓRUM - CATEGORIAS
+
+// Listar todas as categorias
+app.get("/forum/categorias", (req, res) => {
+  db.all("SELECT * FROM forum_categorias ORDER BY nome", (err, rows) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    res.json(rows);
+  });
+});
+
+// Obter uma categoria específica por URL
+app.get("/forum/categorias/:url", (req, res) => {
+  const url = req.params.url;
+  db.get("SELECT * FROM forum_categorias WHERE url = ?", [url], (err, row) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    if (!row) {
+      res.status(404).json({ error: "Categoria não encontrada" });
+      return;
+    }
+    res.json(row);
+  });
+});
+
+// FÓRUM - TÓPICOS
+
+// Listar tópicos de uma categoria
+app.get("/forum/categorias/:url/topicos", (req, res) => {
+  const url = req.params.url;
+  const { limit } = req.query;
+  
+  let query = `
+    SELECT t.* 
+    FROM forum_topicos t
+    JOIN forum_categorias c ON t.categoria_id = c.id
+    WHERE c.url = ?
+    ORDER BY t.fixado DESC, t.ultima_resposta DESC
+  `;
+  
+  const params = [url];
+  
+  if (limit) {
+    query += " LIMIT ?";
+    params.push(parseInt(limit));
+  }
+
+  db.all(query, params, (err, rows) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    res.json(rows);
+  });
+});
+
+// Criar novo tópico
+app.post("/forum/topicos", (req, res) => {
+  const { categoria_id, titulo, conteudo, autor_id, autor_nome } = req.body;
+  
+  if (!categoria_id || !titulo || !conteudo || !autor_id || !autor_nome) {
+    res.status(400).json({ error: "Dados incompletos" });
+    return;
+  }
+
+  db.run(`
+    INSERT INTO forum_topicos (
+      categoria_id, titulo, conteudo, autor_id, autor_nome
+    ) VALUES (?, ?, ?, ?, ?)
+  `, [categoria_id, titulo, conteudo, autor_id, autor_nome], 
+  function(err) {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    
+    // Atualizar contador de threads na categoria
+    db.run(
+      "UPDATE forum_categorias SET threads = threads + 1 WHERE id = ?",
+      [categoria_id]
+    );
+    
+    res.json({ 
+      id: this.lastID, 
+      message: "Tópico criado com sucesso" 
+    });
+  });
+});
+
+// Obter um tópico específico
+app.get("/forum/topicos/:id", (req, res) => {
+  const id = req.params.id;
+  
+  // Registrar visualização
+  db.run(
+    "INSERT INTO forum_visualizacoes (topico_id) VALUES (?)",
+    [id]
+  );
+  
+  // Atualizar contador de visualizações
+  db.run(
+    "UPDATE forum_topicos SET visualizacoes = visualizacoes + 1 WHERE id = ?",
+    [id]
+  );
+  
+  // Obter dados do tópico
+  db.get("SELECT * FROM forum_topicos WHERE id = ?", [id], (err, row) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    if (!row) {
+      res.status(404).json({ error: "Tópico não encontrado" });
+      return;
+    }
+    res.json(row);
+  });
+});
+
+// FÓRUM - POSTAGENS
+
+// Listar postagens de um tópico
+app.get("/forum/topicos/:id/postagens", (req, res) => {
+  const id = req.params.id;
+  db.all(`
+    SELECT * FROM forum_postagens 
+    WHERE topico_id = ?
+    ORDER BY data_criacao ASC
+  `, [id], (err, rows) => {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    res.json(rows);
+  });
+});
+
+// Adicionar postagem a um tópico
+app.post("/forum/topicos/:id/postagens", (req, res) => {
+  const topico_id = req.params.id;
+  const { autor_id, autor_nome, conteudo } = req.body;
+  
+  if (!autor_id || !autor_nome || !conteudo) {
+    res.status(400).json({ error: "Dados incompletos" });
+    return;
+  }
+
+  db.run(`
+    INSERT INTO forum_postagens (
+      topico_id, autor_id, autor_nome, conteudo
+    ) VALUES (?, ?, ?, ?)
+  `, [topico_id, autor_id, autor_nome, conteudo], 
+  function(err) {
+    if (err) {
+      res.status(500).json({ error: err.message });
+      return;
+    }
+    
+    // Atualizar contador de respostas e data da última resposta
+    db.run(`
+      UPDATE forum_topicos 
+      SET 
+        respostas = respostas + 1,
+        ultima_resposta = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [topico_id]);
+    
+    // Atualizar contador de posts na categoria
+    db.run(`
+      UPDATE forum_categorias c
+      SET posts = posts + 1
+      FROM forum_topicos t
+      WHERE t.id = ? AND c.id = t.categoria_id
+    `, [topico_id]);
+    
+    res.json({ 
+      id: this.lastID, 
+      message: "Postagem adicionada com sucesso" 
+    });
   });
 });
 
