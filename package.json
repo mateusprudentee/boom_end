@@ -7,6 +7,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.3",
+    "@vue/cli-service": "^5.0.8",
     "autoprefixer": "^10.4.21",
     "node-gyp": "^11.2.0",
     "postcss": "^8.5.3",
